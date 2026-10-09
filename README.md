@@ -4,18 +4,19 @@ Use a DualShock 4 as a mouse and keyboard on Windows 10 or 11. Move the pointer,
 
 ## Start
 
-You need a DualShock 4 connected by Bluetooth or a micro-USB data cable. Running the source requires Python 3.10 or newer.
+1. Connect your DualShock 4 by Bluetooth or a micro-USB data cable.
+2. Double-click `Start Adapter.cmd` beside this file.
+3. Wait for the controller to connect, then release its buttons and sticks.
 
-1. Download this repository and extract it.
-2. Open PowerShell in the project folder and run `./setup.ps1`.
-3. Double-click `Start Adapter.cmd`.
-4. Wait for the controller to connect, then release its buttons and sticks.
+The `App` folder holds the program and its supporting files. Keep it beside the launcher. You do not need to open it for everyday use.
 
-If the app says it is waiting for a controller, press the PS button to wake it. If PowerShell blocks the setup script, run these commands instead:
+If the app says it is waiting for a controller, press the PS button to wake it.
+
+If you downloaded the source from GitHub, install Python 3.10 or newer, open PowerShell in the project folder, and run `./App/setup.ps1` once before using the launcher. If PowerShell blocks the setup script, run these commands instead:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+python -m venv App\.venv
+.\App\.venv\Scripts\python.exe -m pip install -r App\requirements.txt
 ```
 
 Closing the window keeps the adapter running in the system tray. Choose Quit to stop it. Start at sign-in is available in Settings and is off by default.
@@ -124,9 +125,9 @@ Administrator prompts, the Windows sign-in screen, and some elevated application
 
 ## Build and test
 
-Build a Windows package with `./build.ps1`. The result is `dist\DS4DesktopAdapter\DS4DesktopAdapter.exe`. Keep that executable together with its accompanying files. Build output is not stored in this repository.
+Build a Windows package from the project folder with `./App/build.ps1`. The result is `App\dist\DS4DesktopAdapter\DS4DesktopAdapter.exe`. Keep that executable together with its accompanying files. Build output is not stored in this repository.
 
-Run the automated tests:
+Open PowerShell inside `App` for the following checks. Run the automated tests:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
@@ -149,6 +150,8 @@ To test vibration on a connected controller, hold it and run:
 Automated checks cover input mappings, navigation, USB and Bluetooth output packets, vibration timing, focus changes, and fullscreen detection. Windows integration checks passed for typing and leaving a fullscreen test window. A Bluetooth DualShock 4 accepted vibration start and stop reports while input continued. Physical USB vibration, typing speed with human participants, and a full gaming session have not been tested.
 
 ## Project files
+
+Only this instruction file and `Start Adapter.cmd` sit at the top level. Everything below is inside `App`:
 
 * `main.py`: application entry point and diagnostics.
 * `adapter/controller.py`: USB and Bluetooth input and output.
