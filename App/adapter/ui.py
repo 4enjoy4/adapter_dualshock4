@@ -190,17 +190,18 @@ class App:
         for row, (key, title) in enumerate((
             ('auto_fullscreen', 'Also pause in unknown fullscreen apps (optional)'),
             ('auto_steam_games', 'Detect games in Steam libraries'),
+            ('touch_double_tap', 'Double-tap touchpad to left-click'),
         ), 4):
             variable = tk.BooleanVar(value=self.settings[key])
             self.variables[key] = variable
             ttk.Checkbutton(parent, text=title, variable=variable).grid(row=row, column=0, columnspan=2, sticky='w')
         self.native_keyboard = tk.BooleanVar(value=self.settings['keyboard_type'] == 'windows')
-        ttk.Checkbutton(parent, text='Use Windows keyboard (pointer only; no D-pad selection)', variable=self.native_keyboard).grid(row=6, column=0, columnspan=2, sticky='w')
+        ttk.Checkbutton(parent, text='Use Windows keyboard (pointer only; no D-pad selection)', variable=self.native_keyboard).grid(row=7, column=0, columnspan=2, sticky='w')
         self.startup = tk.BooleanVar(value=startup_enabled())
-        ttk.Checkbutton(parent, text='Start in tray when I sign in to Windows', variable=self.startup).grid(row=7, column=0, columnspan=2, sticky='w')
-        ttk.Button(parent, text='Apply settings', command=self.apply_settings).grid(row=8, column=0, sticky='w', pady=(12, 8))
-        ttk.Button(parent, text='Reconnect controller', command=lambda: self.service.command('rescan')).grid(row=8, column=1, sticky='e')
-        ttk.Label(parent, text='Normal user permissions. Administrator prompts and the sign-in screen\nmay need your laptop keyboard or touchpad.', style='Sub.TLabel').grid(row=9, column=0, columnspan=2, sticky='w', pady=8)
+        ttk.Checkbutton(parent, text='Start in tray when I sign in to Windows', variable=self.startup).grid(row=8, column=0, columnspan=2, sticky='w')
+        ttk.Button(parent, text='Apply settings', command=self.apply_settings).grid(row=9, column=0, sticky='w', pady=(12, 8))
+        ttk.Button(parent, text='Reconnect controller', command=lambda: self.service.command('rescan')).grid(row=9, column=1, sticky='e')
+        ttk.Label(parent, text='Normal user permissions. Administrator prompts and the sign-in screen\nmay need your laptop keyboard or touchpad.', style='Sub.TLabel').grid(row=10, column=0, columnspan=2, sticky='w', pady=8)
 
     def update_games_list(self):
         self.games_list.delete(0, 'end')

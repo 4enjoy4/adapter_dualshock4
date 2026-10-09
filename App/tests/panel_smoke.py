@@ -136,6 +136,20 @@ try:
     results['panel_reopens_without_focus_loss'] = panel.shown and GetForegroundWindow() == before
     panel.hide()
     engine.step(PadState(),time.monotonic(),True)
+    clicks = []
+    entry.bind('<ButtonPress-1>', lambda event: clicks.append('down'))
+    entry.bind('<ButtonRelease-1>', lambda event: clicks.append('up'))
+    x = entry.winfo_rootx() + entry.winfo_width()//2
+    y = entry.winfo_rooty() + entry.winfo_height()//2
+    if GetAncestor(from_point(W.POINT(x,y)),2) != before:
+        raise RuntimeError('Another window covers the tap test target')
+    set_cursor(x,y)
+    engine.reset()
+    engine.step(PadState(),time.monotonic(),True)
+    pad_press(touch=(1,500,300))
+    results['single_light_tap_does_not_click'] = not clicks
+    pad_press(touch=(2,500,300))
+    results['double_tap_sends_one_real_click'] = clicks == ['down','up']
     root.bind('<Escape>', lambda event: root.attributes('-fullscreen',False))
     root.attributes('-fullscreen',True)
     wait(.3)

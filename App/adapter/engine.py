@@ -1,6 +1,7 @@
 """Pure input translation. No Windows calls: pause and release behavior is testable."""
 import math
 from .navigation import Navigation
+from .touchpad import DoubleTap
 
 KEYS = {
     "circle": (0x1B,), "square": (0x08,),
@@ -36,6 +37,7 @@ class Engine:
         self.mouse = set()
         self.repeats = {}
         self.touch = None
+        self.double_tap = DoubleTap()
         self.fractions = [0.0, 0.0, 0.0]
         self.chord_start = None
         self.chord_fired = False
@@ -62,6 +64,7 @@ class Engine:
         self.mouse.clear()
         self.repeats.clear()
         self.touch = None
+        self.double_tap.reset()
         self.fractions = [0.0, 0.0, 0.0]
         self.options_pending = False
         self.shortcut_latched = False
@@ -140,6 +143,9 @@ class Engine:
             return
 
         pressed, released = buttons - self.previous, self.previous - buttons
+        tap_blocked = (not self.settings.get('touch_double_tap', True) or bool(buttons)
+                       or pad.l2 >= 40 or pad.r2 >= 40 or pad.touch_count > 1)
+        tap_clicked = self.double_tap.step(pad.touch, now, blocked=tap_blocked, valid=pad.touch_valid)
         # Share is a shortcut layer. Consume its companion buttons until released,
         # even if Share is released first, to avoid a stray click or Backspace.
         if 'share' in buttons:
@@ -223,4 +229,9 @@ class Engine:
         if ticks:
             self.fractions[2] -= ticks
             self.sink.scroll(ticks)
+        if tap_clicked:
+            down = self.sink.mouse_button('left', True)
+            up = self.sink.mouse_button('left', False)
+            if down is not False and up is not False:
+                self.feedback('key')
         self.previous = buttons

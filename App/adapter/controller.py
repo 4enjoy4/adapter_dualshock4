@@ -20,6 +20,8 @@ class PadState:
     battery: int | None = None
     charging: bool = False
     transport: str = "USB"
+    touch_count: int = 0
+    touch_valid: bool = True
 
     def neutral(self, deadzone=0.18):
         return (not self.buttons and self.touch is None and self.l2 < 40 and self.r2 < 40
@@ -56,6 +58,8 @@ def parse_report(data, bluetooth=False):
     if d[6] & 2:
         buttons.add("touch_click")
     touch = None
+    touch_count = 0
+    touch_valid = False
     battery, charging = None, False
     if extended:
         status = d[29]
@@ -63,15 +67,17 @@ def parse_report(data, bluetooth=False):
         battery = min(100, ((status & 15) + (0 if charging else 1)) * 10)
         # The first touch sample is the latest sample; later slots contain history.
         if d[32] > 0 and len(d) >= 42:
+            touch_valid = True
             for start in (34, 38):
                 contact, xlo, xy, yhi = d[start:start + 4]
                 if not contact & 0x80:
                     x, y = xlo | ((xy & 15) << 8), (xy >> 4) | (yhi << 4)
                     if x < 1920 and y < 942:
-                        touch = (contact & 127, x, y)
-                        break
+                        touch_count += 1
+                        if touch is None:
+                            touch = (contact & 127, x, y)
     return PadState(*d[:4], d[7], d[8], frozenset(buttons), touch,
-                    battery, charging, transport)
+                    battery, charging, transport, touch_count, touch_valid)
 
 
 class Controller:

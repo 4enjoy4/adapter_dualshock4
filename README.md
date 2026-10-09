@@ -68,6 +68,9 @@ Pressing Square without Share sends Backspace. Shortcuts are disabled while the 
 * Hold L3: slower pointer movement.
 * R3: middle click.
 * Touchpad click: left click.
+* Two quick, light taps on the touchpad: one left click, without pressing it down.
+
+For tap clicking, lift your finger between two short taps near the same spot. A single tap does nothing. Swipes, long touches, two-finger touches, and physical button presses cancel the gesture. It also works over the adapter keyboard. Settings includes a Double-tap touchpad to left-click option, enabled by default. Gestures pause with the rest of the desktop controls during gaming.
 
 ## Type with the controller
 
@@ -160,6 +163,7 @@ Only this instruction file and `Start Adapter.cmd` sit at the top level. Everyth
 * `adapter/keyboard.py`: keyboard panel.
 * `adapter/keyboard_model.py`: key layout and navigation.
 * `adapter/navigation.py`: shared direction handling and repeat timing.
+* `adapter/touchpad.py`: touchpad tap gestures.
 * `adapter/service.py`: background input service.
 * `adapter/ui.py`: settings and controls window.
 * `adapter/windows.py`: Windows input and foreground detection.

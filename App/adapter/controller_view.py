@@ -66,7 +66,7 @@ class ControllerView(tk.Canvas):
             text(x,y,glyph,30,color,'center')
             text(x,y+37,label,11,TEXT,'center',True)
         facts = {
-            'Desktop':[('POINT & SCROLL','Right stick / touchpad · pointer','Left stick · scroll'),('CLICK & NAVIGATE','X / R2 · click     L2 · right click','D-pad · arrows     L1 / R1 · tabs'),('OPEN THE KEYBOARD','Options / Triangle · keyboard','Share + Options · hold to pause')],
+            'Desktop':[('POINT & SCROLL','Right stick / touchpad · pointer','Double-tap touchpad · left click'),('CLICK & NAVIGATE','X / R2 · click     L2 · right click','Left stick · scroll     D-pad · arrows'),('OPEN THE KEYBOARD','Options / Triangle · keyboard','Share + Options · hold to pause')],
             'Keyboard':[('FAST TYPING','Left stick + L2 · blue keys','Right stick + R2 · green keys'),('FAMILIAR BUTTONS','X · selected key     R1 · Enter','Square · delete     Triangle · space'),('YOUR PREFERENCES','Fast / Classic in keyboard header','Typing & vibration · speed and feel')],
             'Shortcuts':[('EDIT TEXT','Share + Square · Ctrl+C','Share + Triangle · Ctrl+V'),('SELECT & CUT','Share + X · Ctrl+A','Share + Circle · Ctrl+X'),('UNDO & SWITCH TABS','Share + L1 / R1 · undo / redo','Share + ← / → · previous / next tab')],
         }[self.mode]

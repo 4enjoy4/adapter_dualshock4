@@ -7,6 +7,7 @@ DEFAULTS = {
     'version': 2,
     'pointer_speed': 1100.0,
     'touch_sensitivity': 1.25,
+    'touch_double_tap': True,
     'scroll_speed': 9.0,
     'deadzone': 0.18,
     'auto_fullscreen': False,
@@ -32,7 +33,7 @@ def validate(data):
         value = data.get(key, result[key])
         if type(value) in (float, int) and bounds[0] <= value <= bounds[1]:
             result[key] = float(value)
-    for key in ('auto_fullscreen', 'auto_steam_games', 'feedback_enabled'):
+    for key in ('auto_fullscreen', 'auto_steam_games', 'feedback_enabled', 'touch_double_tap'):
         if isinstance(data.get(key), bool):
             result[key] = data[key]
     # Older versions enabled this heuristic by default, trapping fullscreen video.
