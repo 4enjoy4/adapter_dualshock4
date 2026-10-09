@@ -4,11 +4,12 @@ from pathlib import Path
 
 DATA_DIR = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'DS4DesktopAdapter'
 DEFAULTS = {
+    'version': 2,
     'pointer_speed': 1100.0,
     'touch_sensitivity': 1.25,
     'scroll_speed': 9.0,
     'deadzone': 0.18,
-    'auto_fullscreen': True,
+    'auto_fullscreen': False,
     'auto_steam_games': True,
     'game_apps': [],
     'desktop_apps': [],
@@ -16,19 +17,27 @@ DEFAULTS = {
     'keyboard_type': 'adapter',
     'keyboard_size': 'compact',
     'keyboard_dock': 'bottom',
+    'keyboard_mode': 'dual',
+    'keyboard_speed': 1.25,
+    'feedback_enabled': True,
+    'feedback_strength': .55,
 }
 
 
 def validate(data):
     result = DEFAULTS.copy()
     for key, bounds in {'pointer_speed': (150, 3000), 'touch_sensitivity': (.2, 4),
-                        'scroll_speed': (1, 25), 'deadzone': (.08, .4)}.items():
+                        'scroll_speed': (1, 25), 'deadzone': (.08, .4),
+                        'keyboard_speed': (.7, 2), 'feedback_strength': (0, 1)}.items():
         value = data.get(key, result[key])
-        if isinstance(value, (float, int)) and bounds[0] <= value <= bounds[1]:
+        if type(value) in (float, int) and bounds[0] <= value <= bounds[1]:
             result[key] = float(value)
-    for key in ('auto_fullscreen', 'auto_steam_games'):
+    for key in ('auto_fullscreen', 'auto_steam_games', 'feedback_enabled'):
         if isinstance(data.get(key), bool):
             result[key] = data[key]
+    # Older versions enabled this heuristic by default, trapping fullscreen video.
+    if data.get('version', 1) != 2:
+        result['auto_fullscreen'] = False
     for key in ('game_apps', 'desktop_apps'):
         value = data.get(key, [])
         result[key] = sorted({s.lower() for s in value if isinstance(s, str) and s.endswith('.exe')}) if isinstance(value, list) else []
@@ -36,7 +45,8 @@ def validate(data):
         result['mode'] = data['mode']
     if data.get('keyboard_type') in ('adapter', 'windows'):
         result['keyboard_type'] = data['keyboard_type']
-    for key, choices in {'keyboard_size': ('small','compact','large'), 'keyboard_dock': ('top','bottom')}.items():
+    for key, choices in {'keyboard_size': ('small','compact','large'), 'keyboard_dock': ('top','bottom'),
+                         'keyboard_mode': ('single','dual')}.items():
         if data.get(key) in choices:
             result[key] = data[key]
     return result

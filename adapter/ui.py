@@ -11,7 +11,7 @@ from . import settings as config
 from .windows import visible_apps, startup_enabled, set_startup, InputSink
 from .keyboard import KeyboardPanel
 from .controller_view import ControllerView
-from .windows import monitor_work_area
+from .windows import monitor_work_area, GetForegroundWindow
 
 TITLE = 'DS4 Desktop Adapter'
 
@@ -47,7 +47,8 @@ class App:
         self.tray_ready = False
         self.last_mode = None
         self.closing = False
-        self.keyboard = KeyboardPanel(self.root, self.settings, self.keyboard_visibility, self.save_panel_settings)
+        self.keyboard = KeyboardPanel(self.root, self.settings, self.keyboard_visibility,
+                                      self.save_panel_settings, self.service.feedback)
         self.last_status_at = 0
         self.native_input = InputSink()
         style = ttk.Style()
@@ -91,13 +92,15 @@ class App:
 
         tabs = ttk.Notebook(body)
         tabs.pack(fill='both', expand=True)
-        controls, games, preferences = (ttk.Frame(tabs, padding=16) for _ in range(3))
+        controls, typing, games, preferences = (ttk.Frame(tabs, padding=16) for _ in range(4))
         tabs.add(controls, text='Controls')
+        tabs.add(typing, text='Typing & vibration')
         tabs.add(games, text='Games')
         tabs.add(preferences, text='Settings')
         self.build_controls(controls)
         self.build_games(games)
         self.build_settings(preferences)
+        self.build_typing(typing)
 
         self.warning = tk.StringVar()
         ttk.Label(body, textvariable=self.warning, foreground='#f2bf76', wraplength=width-64).pack(anchor='w', pady=(12, 6))
@@ -117,10 +120,10 @@ class App:
         guide_bar.pack(fill='x', pady=(0, 12))
         for mode in ('Desktop', 'Keyboard', 'Shortcuts'):
             ttk.Button(guide_bar, text=mode, command=lambda value=mode: self.controller_view.update_state(mode=value)).pack(side='left', padx=(0,8))
-        ttk.Label(guide_bar, text='Designed for your muscle memory', style='Sub.TLabel').pack(side='right')
+        ttk.Label(guide_bar, text='Control guides. Shortcuts always work in desktop mode.', style='Sub.TLabel').pack(side='right')
         self.controller_view = ControllerView(parent, self.scale)
         self.controller_view.pack(fill='both', expand=True)
-        ttk.Label(parent, text='TRY IT  ·  Click here, open the keyboard with Options, then use D-pad + X.', style='Sub.TLabel').pack(anchor='w', pady=(12,5))
+        ttk.Label(parent, text='TRY IT  ·  Options opens the keyboard. Fast: LS + L2 / RS + R2. D-pad + X also works.', style='Sub.TLabel').pack(anchor='w', pady=(12,5))
         self.test_entry = ttk.Entry(parent)
         self.test_entry.pack(fill='x', ipady=4)
 
@@ -134,11 +137,33 @@ class App:
                 self.controller_view.update_state(mode='Desktop')
 
     def save_panel_settings(self):
+        if hasattr(self, 'fast_typing'):
+            self.fast_typing.set(self.settings['keyboard_mode'] == 'dual')
         self.service.command('settings', self.settings.copy())
+
+    def build_typing(self, parent):
+        ttk.Label(parent, text='Keep both thumbs on the sticks.', style='Status.TLabel').pack(anchor='w', pady=(0,8))
+        ttk.Label(parent, text='Fast typing gives each hand its own selection.\nBlue: left stick + L2. Green: right stick + R2.\nX types the key with a white outline. D-pad can cross the whole keyboard.\nTriangle: Space. Square: Backspace. L1: Shift. R1: Enter.', style='Sub.TLabel').pack(anchor='w')
+        self.fast_typing = tk.BooleanVar(value=self.settings['keyboard_mode'] == 'dual')
+        ttk.Checkbutton(parent, text='Fast typing with both sticks and triggers', variable=self.fast_typing).pack(anchor='w', pady=(12,0))
+        ttk.Label(parent, text='Classic typing keeps the right stick and triggers as mouse controls.\nYou can also switch using Fast / Classic in the keyboard header.', style='Sub.TLabel').pack(anchor='w', pady=(0,12))
+        for key, label, low, high in [('keyboard_speed','Navigation speed',.7,2), ('feedback_strength','Vibration strength',0,1)]:
+            ttk.Label(parent, text=label).pack(anchor='w')
+            self.variables[key] = tk.DoubleVar(value=self.settings[key])
+            ttk.Scale(parent, from_=low, to=high, variable=self.variables[key]).pack(fill='x', pady=(4,12))
+        self.variables['feedback_enabled'] = tk.BooleanVar(value=self.settings['feedback_enabled'])
+        ttk.Checkbutton(parent, text='Vibration feedback', variable=self.variables['feedback_enabled']).pack(anchor='w')
+        ttk.Label(parent, text='Light taps for typing, a stronger pulse for Enter, and confirmation for shortcuts.\nVibration stops when desktop controls pause.', style='Sub.TLabel').pack(anchor='w', pady=(0,12))
+        ttk.Button(parent, text='Save typing settings', command=self.apply_settings).pack(side='left')
+        ttk.Button(parent, text='Test vibration', command=self.test_feedback).pack(side='left', padx=10)
+
+    def test_feedback(self):
+        self.save_preferences()
+        self.service.command('test_feedback')
 
     def build_games(self, parent):
         ttk.Label(parent, text='Desktop input pauses while these apps have focus.', font=('Segoe UI Semibold', 11)).pack(anchor='w')
-        ttk.Label(parent, text='Steam games are detected by their install folder. Fullscreen and\nborderless apps pause automatically. Add other windowed games below.', style='Sub.TLabel').pack(anchor='w', pady=(6, 10))
+        ttk.Label(parent, text='Steam games pause desktop controls automatically. Add other games below.\nFullscreen video keeps working: Circle sends Escape to leave fullscreen.', style='Sub.TLabel').pack(anchor='w', pady=(6, 10))
         self.games_list = tk.Listbox(parent, height=6, font=('Segoe UI', 10), bg='#142238', fg='#edf4ff', selectbackground='#315b85', borderwidth=0, highlightthickness=1, highlightbackground='#304761')
         self.games_list.pack(fill='x')
         self.update_games_list()
@@ -163,7 +188,7 @@ class App:
             ttk.Scale(parent, from_=low, to=high, variable=variable).grid(row=row, column=1, sticky='ew', padx=14)
         parent.columnconfigure(1, weight=1)
         for row, (key, title) in enumerate((
-            ('auto_fullscreen', 'Pause in fullscreen apps (including fullscreen video)'),
+            ('auto_fullscreen', 'Also pause in unknown fullscreen apps (optional)'),
             ('auto_steam_games', 'Detect games in Steam libraries'),
         ), 4):
             variable = tk.BooleanVar(value=self.settings[key])
@@ -217,14 +242,23 @@ class App:
             self.update_games_list()
 
     def apply_settings(self):
-        self.settings.update({key: var.get() for key, var in self.variables.items()})
-        self.settings['keyboard_type'] = 'windows' if self.native_keyboard.get() else 'adapter'
         try:
             set_startup(self.startup.get())
-            self.service.command('settings', self.settings.copy())
+            self.save_preferences()
             messagebox.showinfo(TITLE, 'Settings saved.', parent=self.root)
         except OSError as exc:
             messagebox.showerror(TITLE, str(exc), parent=self.root)
+
+    def save_preferences(self):
+        self.settings.update({key: var.get() for key, var in self.variables.items()})
+        keyboard_type = 'windows' if self.native_keyboard.get() else 'adapter'
+        if keyboard_type != self.settings['keyboard_type']:
+            self.keyboard.hide()
+            self.native_input.hide_keyboard()
+        self.settings['keyboard_type'] = keyboard_type
+        self.settings['keyboard_mode'] = 'dual' if self.fast_typing.get() else 'single'
+        self.keyboard.sync_layout()
+        self.service.command('settings', self.settings.copy())
 
     def start_tray(self):
         try:
@@ -248,14 +282,14 @@ class App:
             return
         while not self.service.ui_requests.empty():
             action = self.service.ui_requests.get_nowait()
-            if action == 'hide_keyboard':
+            if action.kind == 'hide_keyboard':
                 self.keyboard.hide()
                 self.native_input.hide_keyboard()
-            elif isinstance(action, tuple) and action[0] == 'panel':
-                if (self.service.mode == 'auto' and action[2] == self.service.input_epoch and self.service.desktop_allowed.is_set()
-                        and self.service.keyboard_visible.is_set()):
-                    self.keyboard.handle(action[1])
-            elif action == 'keyboard' and self.service.mode == 'auto' and self.service.desktop_allowed.is_set():
+            elif not self.service.request_valid(action, GetForegroundWindow()):
+                continue
+            elif action.kind == 'panel' and self.service.keyboard_visible.is_set():
+                self.keyboard.handle(action.action)
+            elif action.kind == 'keyboard':
                 if self.settings['keyboard_type'] == 'windows':
                     self.native_input.keyboard()
                 else:

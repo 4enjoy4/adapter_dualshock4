@@ -201,7 +201,9 @@ class GameGuard:
             return f'Game detected: {fg.exe}'
         if fg.shell or fg.exe in settings['desktop_apps']:
             return ''
-        if fg.exe in ('osk.exe', 'tabtip.exe', 'textinputhost.exe', 'ds4desktopadapter.exe'):
+        if fg.exe in ('osk.exe', 'tabtip.exe', 'textinputhost.exe', 'ds4desktopadapter.exe',
+                      'chrome.exe', 'msedge.exe', 'firefox.exe', 'brave.exe', 'opera.exe',
+                      'vlc.exe', 'mpv.exe', 'wmplayer.exe', 'mediaplayer.exe', 'video.ui.exe'):
             return ''
         if settings['auto_steam_games'] and fg.path.startswith(self.roots):
             return f'Steam game detected: {fg.exe}'
@@ -242,6 +244,7 @@ class InputSink:
         sent = self.send(INPUT(type=0, mi=MOUSEINPUT(dwFlags=flags[button][0 if down else 1])))
         if not down and sent:
             self.buttons.discard(button)
+        return sent
 
     def hotkey(self, keys):
         events = []
@@ -250,10 +253,14 @@ class InputSink:
             events.append(INPUT(type=1, ki=KEYBDINPUT(wVk=key, dwFlags=1 if key in (0x25, 0x26, 0x27, 0x28, 0x5B) else 0)))
         for key in reversed(keys):
             events.append(INPUT(type=1, ki=KEYBDINPUT(wVk=key, dwFlags=2 | (1 if key in (0x25, 0x26, 0x27, 0x28, 0x5B) else 0))))
-        if self.send(*events):
+        sent = self.send(*events)
+        if sent:
             self.keys.difference_update(keys)
         else:
+            error = self.error
             self.release_all()
+            self.error = error
+        return sent
 
     def keyboard(self):
         if self.keyboard_callback:
@@ -278,7 +285,7 @@ class InputSink:
             code = int.from_bytes(raw[i:i + 2], 'little')
             events.append(INPUT(type=1, ki=KEYBDINPUT(wScan=code, dwFlags=4)))
             events.append(INPUT(type=1, ki=KEYBDINPUT(wScan=code, dwFlags=6)))
-        self.send(*events)
+        return self.send(*events)
 
     def release_all(self):
         for button in tuple(self.buttons):

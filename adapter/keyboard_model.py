@@ -1,11 +1,47 @@
 """Keyboard geometry and directional selection, independent of Windows/Tk."""
+from dataclasses import dataclass, replace
+
+
+@dataclass
+class Selection:
+    row: int = 1
+    col: int = 1
+    preferred_x: float | None = None
+
+
 class KeyboardModel:
-    def __init__(self):
+    def __init__(self, dual=False):
         self.shift = False
         self.caps = False
         self.language = 'EN'
-        self.row, self.col = 1, 1
-        self.preferred_x = None
+        self.dual = dual
+        self.active = 'left'
+        self.cursors = {'left': Selection(), 'right': Selection(col=6)}
+
+    @property
+    def row(self):
+        return self.cursors[self.active].row
+
+    @property
+    def col(self):
+        return self.cursors[self.active].col
+
+    def columns(self, row, side):
+        count = len(self.rows()[row])
+        if not self.dual:
+            return list(range(count))
+        split = 4 if row == 4 else 6
+        return list(range(split) if side == 'left' else range(split, count))
+
+    def select_at(self, row, col):
+        if self.dual:
+            self.active = 'left' if col in self.columns(row, 'left') else 'right'
+        cursor = self.cursors[self.active]
+        cursor.row, cursor.col, cursor.preferred_x = row, col, None
+
+    def positions(self):
+        sides = ('left', 'right') if self.dual else (self.active,)
+        return {side: (self.cursors[side].row, self.cursors[side].col) for side in sides}
 
     def rows(self):
         letters = ('qwertyuiop[]\\', "asdfghjkl;'", 'zxcvbnm,./') if self.language == 'EN' else ('йцукенгшщзхъ', 'фывапролджэ', 'ячсмитьбю.')
@@ -33,22 +69,36 @@ class KeyboardModel:
             x += weight
         return centers
 
-    def move(self, direction):
+    def move(self, direction, side=None):
+        if side is not None:
+            self.active = side
+        cursor = replace(self.cursors[self.active])
         rows = self.rows()
-        self.col = min(self.col, len(rows[self.row]) - 1)
+        def available(row):
+            return self.columns(row, self.active) if side is not None else list(range(len(rows[row])))
+        columns = available(cursor.row)
+        cursor.col = min(columns, key=lambda col: abs(col-cursor.col))
         if direction in ('left', 'right'):
-            self.col = (self.col + (1 if direction == 'right' else -1)) % len(rows[self.row])
-            self.preferred_x = None
+            index = columns.index(cursor.col)
+            cursor.col = columns[(index + (1 if direction == 'right' else -1)) % len(columns)]
+            cursor.preferred_x = None
         else:
-            if self.preferred_x is None:
-                self.preferred_x = self.centers(rows[self.row])[self.col]
-            self.row = max(0, min(len(rows) - 1, self.row + (1 if direction == 'down' else -1)))
-            self.col = min(range(len(rows[self.row])), key=lambda i: abs(self.centers(rows[self.row])[i] - self.preferred_x))
+            if cursor.preferred_x is None:
+                cursor.preferred_x = self.centers(rows[cursor.row])[cursor.col]
+            cursor.row = max(0, min(len(rows) - 1, cursor.row + (1 if direction == 'down' else -1)))
+            cursor.col = min(available(cursor.row),
+                             key=lambda i: abs(self.centers(rows[cursor.row])[i] - cursor.preferred_x))
+        if self.dual and side is None:
+            self.active = 'left' if cursor.col in self.columns(cursor.row, 'left') else 'right'
+        self.cursors[self.active] = cursor
 
-    def selected(self):
+    def selected(self, side=None):
+        if side is not None:
+            self.active = side
+        cursor = self.cursors[self.active]
         rows = self.rows()
-        self.col = min(self.col, len(rows[self.row]) - 1)
-        return rows[self.row][self.col][1]
+        cursor.col = min(self.columns(cursor.row, self.active), key=lambda col: abs(col-cursor.col))
+        return rows[cursor.row][cursor.col][1]
 
 
 def panel_geometry(work, scale, size='compact', dock='bottom'):

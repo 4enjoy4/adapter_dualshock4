@@ -1,11 +1,14 @@
 """Pure input translation. No Windows calls: pause and release behavior is testable."""
 import math
+from .navigation import Navigation
 
 KEYS = {
     "circle": (0x1B,), "square": (0x08,),
     "up": (0x26,), "down": (0x28,), "left": (0x25,), "right": (0x27,),
     "l1": (0x11, 0x10, 0x09), "r1": (0x11, 0x09),
 }
+PANEL_BUTTONS = {'cross': 'select', 'circle': 'hide', 'square': 'backspace',
+                 'triangle': 'space', 'l1': 'shift', 'r1': 'enter'}
 REPEAT = {"up", "down", "left", "right", "square"}
 SHORTCUTS = {
     'square': (0x11, 0x43), 'triangle': (0x11, 0x56),
@@ -23,8 +26,9 @@ def axis(value, deadzone):
 
 
 class Engine:
-    def __init__(self, sink, toggle_mode, settings, keyboard_active=lambda: False, panel_action=lambda action: None):
+    def __init__(self, sink, toggle_mode, settings, keyboard_active=lambda: False, panel_action=lambda action: None, feedback=lambda cue: None):
         self.sink, self.toggle_mode, self.settings = sink, toggle_mode, settings
+        self.feedback = feedback
         self.previous = frozenset()
         self.active = False
         self.armed = False
@@ -40,35 +44,58 @@ class Engine:
         self.panel_action = panel_action
         self.last_keyboard = False
         self.shortcut_latched = False
-        self.nav_direction = None
-        self.nav_repeat_at = 0.0
+        self.navigation = {side: Navigation() for side in ('left', 'right', 'dpad')}
+        self.triggers = set()
+        self.last_layout = self.settings.get('keyboard_mode', 'dual')
 
     def reset(self):
-        self.sink.release_all()
-        self.mouse.clear()
-        self.repeats.clear()
-        self.touch = None
-        self.fractions = [0.0, 0.0, 0.0]
-        self.armed = False
-        self.active = False
-        self.options_pending = False
+        self.suspend()
         self.previous = frozenset()
         self.last_time = None
         self.chord_start = None
         self.chord_fired = False
-        self.shortcut_latched = False
-        self.nav_direction = None
 
     def suspend(self):
-        """Drop desktop output immediately, retaining only chord tracking."""
+        """Release desktop input and require neutral, retaining chord tracking."""
         self.sink.release_all()
-        self.active = False
-        self.armed = False
+        self.active = self.armed = False
         self.mouse.clear()
         self.repeats.clear()
         self.touch = None
         self.fractions = [0.0, 0.0, 0.0]
         self.options_pending = False
+        self.shortcut_latched = False
+        self.triggers.clear()
+        for navigation in self.navigation.values():
+            navigation.reset()
+
+    def keyboard_step(self, pad, pressed, now):
+        speed = self.settings.get('keyboard_speed', 1.25)
+        dual = self.settings.get('keyboard_mode', 'dual') == 'dual'
+        # D-pad can cross the whole keyboard; each stick stays on its own half.
+        direction = self.navigation['dpad'].step(128, 128, now, speed, pad.buttons)
+        if direction:
+            self.panel_action(direction)
+        for side, x, y in [('left', pad.lx, pad.ly), ('right', pad.rx, pad.ry)]:
+            if side == 'right' and not dual:
+                continue
+            direction = self.navigation[side].step(x, y, now, speed)
+            if direction:
+                self.panel_action(('move', side, direction) if dual else direction)
+        if dual:
+            for side, value in [('left', pad.l2), ('right', pad.r2)]:
+                if value >= 110 and side not in self.triggers:
+                    self.triggers.add(side)
+                    self.panel_action(('select', side))
+                elif value <= 55:
+                    self.triggers.discard(side)
+        for button, action in PANEL_BUTTONS.items():
+            if button in pressed:
+                self.panel_action(action)
+                self.repeats[button] = now + .32
+            elif button == 'square' and button in pad.buttons and now >= self.repeats.get(button, now + 1):
+                self.panel_action(action)
+                self.repeats[button] = now + .06
 
     def step(self, pad, now, allowed):
         buttons = pad.buttons
@@ -98,10 +125,11 @@ class Engine:
             self.previous = buttons
             return
         keyboard = self.keyboard_active()
-        if keyboard != self.last_keyboard:
+        layout = self.settings.get('keyboard_mode', 'dual')
+        if keyboard != self.last_keyboard or layout != self.last_layout:
             self.suspend()
             self.last_keyboard = keyboard
-            self.nav_direction = None
+            self.last_layout = layout
         if not self.active:
             self.active = True
             self.armed = False
@@ -121,18 +149,21 @@ class Engine:
             self.shortcut_latched = True
             for name, keys in SHORTCUTS.items():
                 if name in pressed:
-                    self.sink.hotkey(keys)
+                    if self.sink.hotkey(keys) is not False:
+                        self.feedback('shortcut')
             self.options_pending = False
+            self.touch = None
+            self.fractions = [0.0, 0.0, 0.0]
+            for navigation in self.navigation.values():
+                navigation.reset()
             self.previous = buttons
             return
         if self.shortcut_latched:
-            self.shortcut_latched = bool(buttons & (set(SHORTCUTS) | {'options'}))
+            self.shortcut_latched = bool(buttons or pad.l2 > 55 or pad.r2 > 55)
             self.previous = buttons
             return
         if "options" in pressed:
             self.options_pending = True
-        if "share" in buttons:
-            self.options_pending = False
         if "options" in released and self.options_pending:
             self.options_pending = False
             self.sink.keyboard()
@@ -140,36 +171,17 @@ class Engine:
             return
 
         if keyboard:
-            direction = next((d for d in ('up', 'down', 'left', 'right') if d in buttons), None)
-            if direction is None:
-                x, y = pad.lx - 128, pad.ly - 128
-                if max(abs(x), abs(y)) > 65:
-                    direction = ('right' if x > 0 else 'left') if abs(x) > abs(y) else ('down' if y > 0 else 'up')
-            if direction != self.nav_direction:
-                self.nav_direction = direction
-                self.nav_repeat_at = now + .35
-                if direction:
-                    self.panel_action(direction)
-            elif direction and now >= self.nav_repeat_at:
-                self.panel_action(direction)
-                self.nav_repeat_at = now + .11
-            for button, action in {'cross': 'select', 'circle': 'hide', 'square': 'backspace',
-                                   'triangle': 'space', 'l1': 'shift', 'r1': 'enter'}.items():
-                if button in pressed:
-                    self.panel_action(action)
-                    self.repeats[button] = now + .4
-                elif button == 'square' and button in buttons and now >= self.repeats.get(button, now + 1):
-                    self.panel_action(action)
-                    self.repeats[button] = now + .075
+            self.keyboard_step(pad, pressed, now)
         elif 'triangle' in pressed:
             self.sink.keyboard()
             self.previous = buttons
             return
 
+        dual = keyboard and layout == 'dual'
         desired = set()
-        if pad.r2 >= 50 or "touch_click" in buttons or ('cross' in buttons and not keyboard):
+        if (pad.r2 >= 50 and not dual) or "touch_click" in buttons or ('cross' in buttons and not keyboard):
             desired.add("left")
-        if pad.l2 >= 50:
+        if pad.l2 >= 50 and not dual:
             desired.add("right")
         if "r3" in buttons:
             desired.add("middle")
@@ -191,8 +203,8 @@ class Engine:
 
         slow = 0.25 if "l3" in buttons else 1
         speed, deadzone = self.settings['pointer_speed'], self.settings['deadzone']
-        dx = axis(pad.rx, deadzone) * speed * dt * slow
-        dy = axis(pad.ry, deadzone) * speed * dt * slow
+        dx = 0 if dual else axis(pad.rx, deadzone) * speed * dt * slow
+        dy = 0 if dual else axis(pad.ry, deadzone) * speed * dt * slow
         if pad.touch and self.touch and pad.touch[0] == self.touch[0]:
             tx, ty = pad.touch[1] - self.touch[1], pad.touch[2] - self.touch[2]
             if abs(tx) < 450 and abs(ty) < 450:

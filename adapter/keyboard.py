@@ -15,23 +15,27 @@ SetWindowPos = bind(user32, 'SetWindowPos', [W.HWND, W.HWND, C.c_int, C.c_int, C
 
 
 class KeyboardPanel:
-    def __init__(self, root, settings=None, on_visibility=lambda shown: None, on_settings=lambda: None):
+    def __init__(self, root, settings=None, on_visibility=lambda shown: None, on_settings=lambda: None,
+                 feedback=lambda cue: None):
         self.root, self.settings, self.on_visibility = root, settings if settings is not None else {}, on_visibility
         self.on_settings = on_settings
+        self.feedback = feedback
         self.window = self.canvas = None
         self.shown = False
-        self.model = KeyboardModel()
+        self.model = KeyboardModel(self.settings.get('keyboard_mode', 'dual') == 'dual')
         self.sink = InputSink()
         self.old_proc = self.proc = self.hwnd = None
         self.target = None
         self.keys, self.key_indices = [], []
         self.drag_origin = None
         self.moved = False
+        self.draw_job = None
         self.scale = float(root.tk.call('tk', 'scaling')) / (96 / 72)
 
     def toggle(self):
         if self.shown:
             self.hide()
+            self.feedback('close')
             return
         self.target = GetForegroundWindow()
         self.work = monitor_work_area(self.target)
@@ -45,6 +49,7 @@ class KeyboardPanel:
         SetWindowPos(self.hwnd, W.HWND(-1), 0, 0, 0, 0, 0x0010 | 0x0001 | 0x0002)
         self.shown = True
         self.on_visibility(True)
+        self.feedback('open')
 
     def place(self):
         self.x, self.y, self.width, self.height = panel_geometry(self.work, self.scale,
@@ -86,7 +91,8 @@ class KeyboardPanel:
         small = max(12, round(fs * .76))
         gap = max(4, round(w / 230))
         c.create_text(14, title/2, text=f'KEYBOARD  {self.model.language}   /   DRAG TO MOVE', anchor='w', fill='#93accd', font=('Segoe UI Semibold', -small))
-        for offset, label, action, size in ((230, 'Size', 'size',65), (152, 'Top / bottom', 'dock',87), (58, 'Close', 'hide',48)):
+        mode_label = 'Fast' if self.model.dual else 'Classic'
+        for offset, label, action, size in ((315, mode_label, 'mode',78), (230, 'Size', 'size',65), (152, 'Top / bottom', 'dock',87), (58, 'Close', 'hide',48)):
             unit = w / 760
             x1, x2 = w-offset*unit, w-(offset-size)*unit
             c.create_rectangle(x1, 6, x2, title-5, fill='#22334c', outline='')
@@ -94,26 +100,56 @@ class KeyboardPanel:
             self.keys.append((x1, 6, x2, title-5, (action, None)))
             self.key_indices.append(None)
         area = h-title-footer
+        positions = self.model.positions()
+        colors = {'left': '#80c7ff', 'right': '#7de3b4'}
         for ri, row in enumerate(self.rows()):
             y1 = title + ri*area/5
             y2 = y1 + area/5 - gap
             unit, x = (w-20) / sum(k[2] for k in row), 10
             for ci, (label, action, weight) in enumerate(row):
                 x2 = x + unit*weight-gap
-                selected = (ri,ci) == (self.model.row,self.model.col)
+                selected = next((side for side, pos in positions.items() if pos == (ri,ci)), None)
                 toggled = action[0] == 'shift' and self.model.shift or action[0] == 'caps' and self.model.caps
-                fill = '#80c7ff' if selected else '#25594f' if toggled else '#1d2a40'
-                c.create_rectangle(x,y1,x2,y2,fill=fill,outline='#c8e9ff' if selected else '#30435f',width=2 if selected else 1)
+                fill = colors[selected] if selected else '#25594f' if toggled else '#1d2a40'
+                active = selected == self.model.active
+                c.create_rectangle(x,y1,x2,y2,fill=fill,outline='#ffffff' if active else '#30435f',width=3 if active else 1)
+                if self.model.dual:
+                    side = 'left' if ci in self.model.columns(ri, 'left') else 'right'
+                    c.create_line(x,y2,x2,y2,fill=colors[side],width=2)
                 c.create_text((x+x2)/2,(y1+y2)/2,text=label,fill='#08111f' if selected else '#f0f5ff',font=('Segoe UI Semibold',-fs))
                 self.keys.append((x,y1,x2,y2,action))
                 self.key_indices.append((ri,ci))
                 x += unit*weight
-        c.create_text(w/2,h-footer/2,text='D-pad / LS  Move     ×  Select     ○  Close     □  Delete     △  Space     L1  Shift     R1  Enter',fill='#a9bfdd',font=('Segoe UI',-small))
+        hint = (f'LS + L2  Blue     RS + R2  Green     X  {self.model.active.title()} key     △  Space     □  Delete     R1  Enter'
+                if self.model.dual else 'D-pad / LS  Move     X  Select     ○  Close     □  Delete     △  Space     L1  Shift     R1  Enter')
+        c.create_text(w/2,h-footer/2,text=hint,fill='#a9bfdd',font=('Segoe UI',-small))
+
+    def redraw(self):
+        if self.draw_job is None:
+            self.draw_job = self.root.after_idle(self.flush_draw)
+
+    def flush_draw(self):
+        self.draw_job = None
+        if self.shown:
+            self.draw()
+
+    def sync_layout(self):
+        self.model.dual = self.settings.get('keyboard_mode', 'dual') == 'dual'
+        active = self.model.active
+        for side in self.model.positions():
+            self.model.selected(side)
+        self.model.active = active
+        self.redraw()
 
     def handle(self, action):
         if not self.shown:
             return
-        if action in ('up','down','left','right'):
+        if isinstance(action, tuple):
+            if action[0] == 'move':
+                self.model.move(action[2], action[1])
+            elif action[0] == 'select':
+                self.activate(self.model.selected(action[1]))
+        elif action in ('up','down','left','right'):
             self.model.move(action)
         elif action == 'select':
             self.activate(self.model.selected())
@@ -124,17 +160,23 @@ class KeyboardPanel:
         elif action in ('backspace','enter'):
             self.activate(('key',(8 if action == 'backspace' else 13,)))
         if self.shown:
-            self.draw()
+            self.redraw()
 
     def activate(self, action):
         kind, value = action
         if kind == 'hide':
             self.hide()
+            self.feedback('close')
         elif kind in ('shift','caps'):
             setattr(self.model, kind, not getattr(self.model,kind))
+            self.feedback('edit')
         elif kind == 'language':
             self.model.language = 'RU' if self.model.language == 'EN' else 'EN'
-            self.model.selected()  # Clamp selection when a language has a shorter row.
+            self.sync_layout()
+        elif kind == 'mode':
+            self.settings['keyboard_mode'] = 'single' if self.model.dual else 'dual'
+            self.sync_layout()
+            self.on_settings()
         elif kind == 'size':
             choices = ['small','compact','large']
             self.settings['keyboard_size'] = choices[(choices.index(self.settings.get('keyboard_size','compact'))+1)%3]
@@ -145,14 +187,18 @@ class KeyboardPanel:
             self.place()
             self.on_settings()
         elif kind == 'text':
-            self.sink.text(value)
-            self.model.shift = False
+            if self.sink.text(value) is not False:
+                self.model.shift = False
+                self.feedback('key')
+            else:
+                self.feedback('error')
         elif kind == 'key':
-            self.sink.hotkey(value)
+            cue = 'enter' if value == (13,) else 'shortcut' if 17 in value else 'edit'
+            self.feedback(cue if self.sink.hotkey(value) is not False else 'error')
 
     def press(self, event):
         self.moved = False
-        if event.y < self.height*.14 and event.x < self.width*(1-230/760):
+        if event.y < self.height*.14 and event.x < self.width*(1-315/760):
             self.drag_origin = (event.x_root,event.y_root,self.window.winfo_x(),self.window.winfo_y())
 
     def drag(self, event):
@@ -171,11 +217,10 @@ class KeyboardPanel:
         for i,(x1,y1,x2,y2,action) in enumerate(self.keys):
             if x1<=event.x<=x2 and y1<=event.y<=y2:
                 if self.key_indices[i] is not None:
-                    self.model.row,self.model.col = self.key_indices[i]
-                    self.model.preferred_x = None
+                    self.model.select_at(*self.key_indices[i])
                 self.activate(action)
                 if self.shown:
-                    self.draw()
+                    self.redraw()
                 break
 
     def hide(self):
@@ -187,6 +232,9 @@ class KeyboardPanel:
 
     def close(self):
         self.hide()
+        if self.draw_job is not None:
+            self.root.after_cancel(self.draw_job)
+            self.draw_job = None
         if self.hwnd and self.old_proc:
             SetWindowLongPtrW(self.hwnd,-4,self.old_proc)
         if self.window:

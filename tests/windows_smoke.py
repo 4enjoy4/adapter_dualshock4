@@ -77,7 +77,7 @@ def main():
         root.attributes('-fullscreen', True)
         wait(.25)
         fg = guard.foreground()
-        result['real_fullscreen_detection'] = fg.full and bool(guard.reason(fg, validate({}), 'auto'))
+        result['real_fullscreen_detection'] = fg.full and bool(guard.reason(fg, validate({'version': 2, 'auto_fullscreen': True}), 'auto'))
         root.attributes('-fullscreen', False)
         wait(.25)
         result['desktop_resumes'] = not guard.reason(guard.foreground(), validate({}), 'auto')

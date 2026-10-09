@@ -14,7 +14,7 @@ from adapter.controller import PadState
 from adapter.engine import Engine
 from adapter.settings import validate
 from adapter.windows import (InputSink, GetForegroundWindow, GetWindowThreadProcessId,
-                             GetCursorPos, bind, user32, dpi_aware)
+                             GetCursorPos, bind, user32, dpi_aware, GameGuard)
 
 dpi_aware()
 root = tk.Tk()
@@ -24,7 +24,9 @@ tk.Label(root, text='Temporary adapter test — no input is sent to other applic
 entry = tk.Entry(root, font=('Segoe UI', 18))
 entry.pack(fill='x', padx=20, pady=20)
 entry.focus_set()
-panel = KeyboardPanel(root)
+settings = validate({})
+cues = []
+panel = KeyboardPanel(root, settings, feedback=cues.append)
 sink = InputSink()
 results = {}
 cursor = W.POINT()
@@ -84,7 +86,7 @@ try:
     results['emitted_text'] = emitted
     results['sink_error'] = panel.sink.error or sink.error
     results['click_keeps_target_focus'] = GetForegroundWindow() == before
-    engine = Engine(sink, lambda: None, validate({}), lambda: panel.shown, panel.handle)
+    engine = Engine(sink, lambda: None, settings, lambda: panel.shown, panel.handle, cues.append)
     engine.step(PadState(),time.monotonic(),True)
     pad_press(['right'])
     pad_press(['cross'])
@@ -104,6 +106,20 @@ try:
     results['copy_paste_without_stray_delete'] = entry.get() == 'qweE'
     pad_press(['share','triangle'])
     results['paste_inserts_clipboard_text'] = entry.get() == 'qweEqweE'
+    pad_press(rx=255)
+    pad_press(r2=180)
+    pad_press(l2=180)
+    results['dual_stick_triggers_type_both_selections'] = entry.get() == 'qweEqweEue'
+    results['typing_feedback_emitted'] = 'key' in cues and 'edit' in cues and 'shortcut' in cues
+    entered = []
+    entry.bind('<Return>', lambda event: entered.append(True))
+    pad_press(['r1'])
+    results['enter_injects_return_and_feedback'] = bool(entered) and cues[-1] == 'enter'
+    panel.activate(('mode',None))
+    engine.step(PadState(),time.monotonic(),True)
+    results['classic_mode_available'] = settings['keyboard_mode'] == 'single'
+    panel.activate(('mode',None))
+    engine.step(PadState(),time.monotonic(),True)
     left,top,right,bottom = panel.work
     results['keyboard_excludes_taskbar'] = panel.y+panel.height < bottom
     panel.activate(('size',None)); panel.draw(); wait(.05)
@@ -118,6 +134,17 @@ try:
     results['panel_hides'] = not panel.shown
     panel.toggle(); wait(.2)
     results['panel_reopens_without_focus_loss'] = panel.shown and GetForegroundWindow() == before
+    panel.hide()
+    engine.step(PadState(),time.monotonic(),True)
+    root.bind('<Escape>', lambda event: root.attributes('-fullscreen',False))
+    root.attributes('-fullscreen',True)
+    wait(.3)
+    guard = GameGuard()
+    fg = guard.foreground()
+    results['fullscreen_desktop_stays_enabled'] = fg.full and not guard.reason(fg, settings, 'auto')
+    pad_press(['circle'])
+    wait(.2)
+    results['circle_exits_real_fullscreen_window'] = not root.attributes('-fullscreen')
     results['success'] = all(value for value in results.values() if isinstance(value,bool)) and not results['sink_error']
 except Exception as exc:
     results.update(success=False,error=str(exc))

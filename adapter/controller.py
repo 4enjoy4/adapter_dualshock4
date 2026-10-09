@@ -1,6 +1,7 @@
 """Read the physical controller in shared mode; never emulate or hide a gamepad."""
 from dataclasses import dataclass
 import time
+from .feedback import rumble_report
 
 SONY = 0x054C
 PRODUCTS = {0x05C4, 0x09CC, 0x0BA0}
@@ -80,6 +81,7 @@ class Controller:
         self.last_report = 0.0
         self.product = None
         self.bluetooth = False
+        self.rumble_active = False
 
     def connect(self):
         import hid
@@ -122,5 +124,21 @@ class Controller:
 
     def close(self):
         if self.device is not None:
+            if self.rumble_active:
+                try:
+                    self.set_rumble(0, 0)
+                except OSError:
+                    pass
             self.device.close()
             self.device = None
+        self.rumble_active = False
+
+    def set_rumble(self, left=0, right=0):
+        if self.device is None:
+            raise OSError('Controller is disconnected')
+        report = rumble_report(self.bluetooth, left, right)
+        self.rumble_active = self.rumble_active or bool(left or right)
+        # Windows HIDAPI pads to the largest output report in the descriptor.
+        if self.device.write(report) < len(report):
+            raise OSError('Incomplete rumble report')
+        self.rumble_active = bool(left or right)

@@ -176,7 +176,7 @@ class EngineTests(unittest.TestCase):
         self.step(.9, ['l1'])
         self.step(1)
         self.step(1.1, ly=255)
-        self.assertEqual(actions, ['right','right','select','shift','down'])
+        self.assertEqual(actions, ['right','right','right','select','shift',('move','left','down')])
         self.assertEqual(self.sink.events, [])
 
     def test_closing_keyboard_does_not_leak_held_cross_click(self):
@@ -232,6 +232,7 @@ class GuardTests(unittest.TestCase):
         self.settings = validate({})
 
     def test_fullscreen_game_is_paused(self):
+        self.settings['game_apps'] = ['game.exe']
         self.assertTrue(self.guard.reason(Foreground(1, 'game.exe', full=True), self.settings, 'auto'))
 
     def test_windowed_steam_game_is_paused(self):
